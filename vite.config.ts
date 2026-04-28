@@ -6,6 +6,7 @@ import tailwindcss from '@tailwindcss/vite'
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   preview: {
-    allowedHosts: ['sesaichatbot-dev.up.railway.app'],
+    // Allow Railway-generated preview domains
+    allowedHosts: ['.up.railway.app'],
   },
 })
