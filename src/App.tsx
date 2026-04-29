@@ -11,6 +11,49 @@ type Chat = {
   archived?: boolean
 }
 
+function stripMarkdown(input: string): string {
+  // Goal: keep the content readable while removing common Markdown syntax
+  // (headings/bold/lists/code fences) so the UI shows "plain text".
+  let text = input ?? ''
+
+  // Fenced code blocks: keep inner content (remove ``` wrapper).
+  text = text.replace(/```[a-zA-Z0-9_-]*\n([\s\S]*?)```/g, '$1')
+  text = text.replace(/```([\s\S]*?)```/g, '$1')
+
+  // Inline code: remove backticks.
+  text = text.replace(/`([^`]+)`/g, '$1')
+
+  // Links/images: keep label/alt text.
+  text = text.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '$1')
+  text = text.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '$1')
+
+  // Headings: remove leading #.
+  text = text.replace(/^#{1,6}\s+/gm, '')
+
+  // Blockquotes: remove leading >.
+  text = text.replace(/^>\s?/gm, '')
+
+  // Bold/italic/strikethrough.
+  text = text.replace(/\*\*([^*]+)\*\*/g, '$1')
+  text = text.replace(/__([^_]+)__/g, '$1')
+  text = text.replace(/~~([^~]+)~~/g, '$1')
+
+  // Unordered list markers.
+  text = text.replace(/^(\s*)[-*+]\s+/gm, '$1')
+  // Common "bullet" character.
+  text = text.replace(/^(\s*)•\s+/gm, '$1')
+  // Ordered list markers.
+  text = text.replace(/^(\s*)\d+\.\s+/gm, '$1')
+
+  // Horizontal rules: remove the line.
+  text = text.replace(/^\s*(?:-{3,}|_{3,}|\*{3,})\s*$/gm, '')
+
+  // Remove any remaining emphasis wrappers conservatively.
+  text = text.replace(/\B_([^_\n]+)_\B/g, '$1')
+
+  return text
+}
+
 function App() {
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [input, setInput] = useState('')
@@ -505,7 +548,9 @@ function App() {
                       >
                         {m.role === 'user' ? 'You' : 'SES'}
                       </div>
-                      <div className="whitespace-pre-wrap text-slate-900">{m.content}</div>
+                      <div className="whitespace-pre-wrap text-slate-900">
+                        {m.role === 'assistant' ? stripMarkdown(m.content) : m.content}
+                      </div>
                     </div>
 
                     {m.role === 'user' ? (
