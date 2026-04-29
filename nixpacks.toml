@@ -1,0 +1,3 @@
+# Vite 8+ needs Node 20+ (CustomEvent global). Railway/Nixpacks defaulted to 18 before.
+[variables]
+NIXPACKS_NODE_VERSION = "22"
