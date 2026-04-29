@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import sesLogo from './assets/ses-logo.png'
+import { getOllamaModel, streamOllamaChat } from './ollama'
 
 type Message = { id: string; role: 'user' | 'assistant'; content: string }
 type Chat = {
@@ -31,6 +32,8 @@ function App() {
     { id: crypto.randomUUID(), title: 'SES Chat UI', messages: starterMessages },
   ])
   const [activeChatId, setActiveChatId] = useState<string>(() => chats[0]?.id ?? '')
+  const [sending, setSending] = useState(false)
+  const sendAbortRef = useRef<AbortController | null>(null)
 
   const listRef = useRef<HTMLDivElement | null>(null)
 
@@ -40,7 +43,7 @@ function App() {
   )
   const messages = activeChat?.messages ?? []
 
-  const canSend = input.trim().length > 0 && Boolean(activeChat)
+  const canSend = input.trim().length > 0 && Boolean(activeChat) && !sending
   const accent = useMemo(() => ({ color: 'var(--ses-teal)' }), [])
   const accentBg = useMemo(() => ({ background: 'rgba(6, 153, 153, 0.08)' }), [])
   const accentBorder = useMemo(() => ({ borderColor: 'rgba(6, 153, 153, 0.28)' }), [])
@@ -126,38 +129,69 @@ function App() {
     }
   }
 
-  function sendMessage() {
+  async function sendMessage() {
     const text = input.trim()
-    if (!text) return
-    if (!activeChat) return
+    if (!text || !activeChat || sending) return
 
+    const chatId = activeChat.id
     const userMsg: Message = { id: crypto.randomUUID(), role: 'user', content: text }
-    const reply: Message = {
-      id: crypto.randomUUID(),
-      role: 'assistant',
-      content: 'Got it. (Hook me up to your backend/API and I’ll answer for real.)',
-    }
+    const assistantId = crypto.randomUUID()
+    const assistantMsg: Message = { id: assistantId, role: 'assistant', content: '' }
+
+    const historyForApi = [...activeChat.messages, userMsg].map(({ role, content }) => ({
+      role,
+      content,
+    }))
 
     setChats((prev) =>
       prev.map((c) =>
-        c.id === activeChat.id
+        c.id === chatId
           ? {
               ...c,
               title: c.title === 'New chat' ? text.slice(0, 28) || 'New chat' : c.title,
-              messages: [...c.messages, userMsg],
+              messages: [...c.messages, userMsg, assistantMsg],
             }
           : c,
       ),
     )
     setInput('')
+    setSending(true)
+    sendAbortRef.current?.abort()
+    sendAbortRef.current = new AbortController()
 
-    setTimeout(() => {
+    try {
+      await streamOllamaChat(historyForApi, (accumulated) => {
+        setChats((prev) =>
+          prev.map((c) => {
+            if (c.id !== chatId) return c
+            return {
+              ...c,
+              messages: c.messages.map((m) =>
+                m.id === assistantId ? { ...m, content: accumulated } : m,
+              ),
+            }
+          }),
+        )
+      }, sendAbortRef.current.signal)
+    } catch (err) {
+      if (err instanceof DOMException && err.name === 'AbortError') return
+      const message = err instanceof Error ? err.message : 'Request failed'
       setChats((prev) =>
-        prev.map((c) =>
-          c.id === activeChat.id ? { ...c, messages: [...c.messages, reply] } : c,
-        ),
+        prev.map((c) => {
+          if (c.id !== chatId) return c
+          return {
+            ...c,
+            messages: c.messages.map((m) =>
+              m.id === assistantId
+                ? { ...m, content: m.content ? `${m.content}\n\nError: ${message}` : `Error: ${message}` }
+                : m,
+            ),
+          }
+        }),
       )
-    }, 250)
+    } finally {
+      setSending(false)
+    }
   }
 
   return (
@@ -420,8 +454,12 @@ function App() {
         {/* Main */}
         <main className="flex h-full min-w-0 flex-1 flex-col bg-slate-50">
           <header className="sticky top-0 z-10 border-b border-slate-200 bg-white/80 backdrop-blur">
-            <div className="mx-auto flex w-full max-w-6xl items-center gap-3 px-4 py-3">
+            <div className="mx-auto flex w-full max-w-6xl flex-wrap items-center gap-2 px-4 py-3 sm:gap-3">
               <div className="text-sm font-semibold tracking-tight text-slate-900">SES Chat</div>
+              <div className="text-[11px] text-slate-500 sm:ml-auto">
+                Model: <span className="font-mono text-slate-700">{getOllamaModel()}</span>
+                {sending ? <span className="text-[color:var(--ses-teal)]"> · Thinking…</span> : null}
+              </div>
             </div>
           </header>
 
