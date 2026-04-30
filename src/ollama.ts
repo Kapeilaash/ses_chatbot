@@ -30,6 +30,13 @@ export function getOllamaModel(): string {
   return import.meta.env.VITE_OLLAMA_MODEL?.trim() || 'qwen2.5:0.5b'
 }
 
+/** Injected on every chat request so identity questions stay on-brand. */
+export const SES_ASSISTANT_SYSTEM_PROMPT =
+  'You are SES AI Assistant, the assistant for SES users. ' +
+  'When asked who you are, what you are, or to introduce or describe yourself, answer as SES AI Assistant in plain language. ' +
+  'Do not name or discuss underlying language models, base models, vendors, or training systems (for example do not say you are Qwen, Llama, GPT, Claude, Gemini, Ollama, or similar). ' +
+  'If asked what model powers you, politely say you are SES AI Assistant and do not disclose technical model details.'
+
 export async function streamOllamaChat(
   messages: { role: 'user' | 'assistant'; content: string }[],
   onToken: (accumulated: string) => void,
@@ -38,10 +45,14 @@ export async function streamOllamaChat(
   const base = getChatBackendBaseUrl()
   const path = getChatPath()
   const model = getOllamaModel()
+  const messagesForApi = [
+    { role: 'system' as const, content: SES_ASSISTANT_SYSTEM_PROMPT },
+    ...messages,
+  ]
   const res = await fetch(`${base}${path}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model, messages, stream: true }),
+    body: JSON.stringify({ model, messages: messagesForApi, stream: true }),
     signal,
   })
   if (!res.ok) {
