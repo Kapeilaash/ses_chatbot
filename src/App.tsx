@@ -103,7 +103,7 @@ function App() {
 
   useEffect(() => {
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight })
-  }, [messages.length])
+  }, [messages, sending])
 
   useEffect(() => {
     function closeMenu() {
@@ -501,7 +501,6 @@ function App() {
               <div className="text-sm font-semibold tracking-tight text-slate-900">SES Chat</div>
               <div className="text-[11px] text-slate-500 sm:ml-auto">
                 Model: <span className="font-mono text-slate-700">{getOllamaModel()}</span>
-                {sending ? <span className="text-[color:var(--ses-teal)]"> · Thinking…</span> : null}
               </div>
             </div>
           </header>
@@ -512,7 +511,14 @@ function App() {
           >
             <div className="mx-auto w-full max-w-6xl px-4 py-6">
               <div className="space-y-6">
-                {messages.map((m) => (
+                {messages.map((m) => {
+                  const last = messages[messages.length - 1]
+                  const isThinkingRow =
+                    sending &&
+                    m.role === 'assistant' &&
+                    last?.id === m.id &&
+                    !m.content.trim()
+                  return (
                   <div
                     key={m.id}
                     className={[
@@ -521,7 +527,12 @@ function App() {
                     ].join(' ')}
                   >
                     {m.role === 'assistant' ? (
-                      <div className="h-9 w-9 shrink-0 overflow-hidden rounded-full border border-slate-200 bg-white">
+                      <div
+                        className={[
+                          'h-9 w-9 shrink-0 overflow-hidden rounded-full border border-slate-200 bg-white',
+                          isThinkingRow ? 'animate-pulse ring-2 ring-[color:var(--ses-teal)]/25' : '',
+                        ].join(' ')}
+                      >
                         <img
                           src={sesLogo}
                           alt=""
@@ -549,7 +560,17 @@ function App() {
                         {m.role === 'user' ? 'You' : 'SES'}
                       </div>
                       <div className="whitespace-pre-wrap text-slate-900">
-                        {m.role === 'assistant' ? stripMarkdown(m.content) : m.content}
+                        {m.role === 'assistant' && isThinkingRow ? (
+                          <div className="thinking-dots" role="status" aria-live="polite" aria-label="Assistant is thinking">
+                            <span />
+                            <span />
+                            <span />
+                          </div>
+                        ) : m.role === 'assistant' ? (
+                          stripMarkdown(m.content)
+                        ) : (
+                          m.content
+                        )}
                       </div>
                     </div>
 
@@ -574,7 +595,8 @@ function App() {
                       </div>
                     ) : null}
                   </div>
-                ))}
+                  )
+                })}
               </div>
             </div>
           </div>
