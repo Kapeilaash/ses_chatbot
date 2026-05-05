@@ -1,73 +1,124 @@
-# React + TypeScript + Vite
+# SES Chat UI
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+A lightweight web chat UI for **SES AI Assistant**, built with **React + TypeScript + Vite**.  
+It streams responses from an **Ollama-compatible** `/api/chat` endpoint (NDJSON streaming).
 
-Currently, two official plugins are available:
+## Features
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+- **Streaming chat**: token-by-token updates for assistant messages.
+- **Chat sidebar**: create, rename, pin, archive, and delete chats.
+- **Branding + identity**: the app injects a system prompt so “Who are you?” answers stay **SES AI Assistant** (no base-model disclosure).
+- **Thinking animation**: ChatGPT-style animated dots while waiting for the first token.
+- **Tailwind v4** styling via the Vite plugin.
 
-## React Compiler
+## Requirements
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+- **Node.js**: `>= 20.19.0` (see `package.json` `engines.node`)
+- An Ollama server or gateway that supports **Ollama chat streaming**:
+  - `POST /api/chat`
+  - NDJSON chunks that include `message.content`
+  - A final chunk with `done: true`
 
-## Expanding the ESLint configuration
+## Getting started (local)
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+1) Install dependencies
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+npm install
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+2) Start Ollama (example)
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+ollama serve
 ```
+
+3) Run the dev server
+
+```bash
+npm run dev
+```
+
+### Dev proxy (no CORS pain)
+
+In development, Vite proxies requests from `'/ollama'` to `http://127.0.0.1:11434` (see `vite.config.ts`).  
+So the UI can talk to Ollama without needing browser CORS configuration.
+
+## Configuration (environment variables)
+
+This is a Vite app, so variables must be prefixed with `VITE_`.
+
+- **`VITE_OLLAMA_MODEL`**: Model name to send in the request.  
+  Default: `qwen2.5:0.5b`
+- **`VITE_OLLAMA_URL`**: Base URL for Ollama (direct).  
+  Default: dev uses `'/ollama'` (Vite proxy), prod uses `http://127.0.0.1:11434`
+- **`VITE_CHAT_BACKEND_URL`**: Base URL for a gateway (e.g., FastAPI) that exposes an Ollama-compatible chat endpoint.  
+  If set, it is used for chat requests instead of `VITE_OLLAMA_URL`.
+- **`VITE_CHAT_PATH`**: Path for chat streaming.  
+  Default: `/api/chat`
+
+### Example `.env.local`
+
+```bash
+# Use a gateway in dev/prod (optional)
+VITE_CHAT_BACKEND_URL=http://127.0.0.1:8000
+
+# If your gateway mounts chat somewhere else (optional)
+VITE_CHAT_PATH=/api/chat
+
+# Choose the model name the backend expects
+VITE_OLLAMA_MODEL=qwen2.5:0.5b
+```
+
+## Scripts
+
+- **`npm run dev`**: Start Vite dev server.
+- **`npm run build`**: Type-check (`tsc -b`) then build for production (`vite build`).
+- **`npm run preview`**: Preview the production build locally.
+- **`npm run start`**: Serve the `dist/` folder (uses `serve -s dist`).
+- **`npm run lint`**: Run ESLint.
+
+## Production
+
+Build:
+
+```bash
+npm run build
+```
+
+Serve the static build:
+
+```bash
+npm run start
+```
+
+If deploying behind a gateway, set `VITE_CHAT_BACKEND_URL` at build time (or via your platform’s Vite env injection) so the frontend posts to your gateway instead of local Ollama.
+
+## How streaming works (high level)
+
+The UI sends a chat request shaped like Ollama:
+
+```json
+{
+  "model": "your-model",
+  "messages": [
+    { "role": "system", "content": "..." },
+    { "role": "user", "content": "Hello" }
+  ],
+  "stream": true
+}
+```
+
+It then parses NDJSON lines and accumulates `message.content` until the backend emits a chunk with `done: true`.
+
+## Troubleshooting
+
+### I get “Request failed” or a non-200 error
+
+- Ensure the backend URL/path is correct (`VITE_CHAT_BACKEND_URL`, `VITE_CHAT_PATH`).
+- If you are calling Ollama directly, confirm it’s reachable at `VITE_OLLAMA_URL` (or the default `http://127.0.0.1:11434` in production).
+- In dev, confirm the Vite proxy is active and Ollama is running.
+
+### The assistant doesn’t stream (it returns all at once)
+
+Your backend must support streaming and emit NDJSON chunks progressively. If it buffers the response, the UI won’t receive tokens until the end.
