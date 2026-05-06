@@ -37,6 +37,13 @@ export const SES_ASSISTANT_SYSTEM_PROMPT =
   'Do not name or discuss underlying language models, base models, vendors, or training systems (for example do not say you are Qwen, Llama, GPT, Claude, Gemini, Ollama, or similar). ' +
   'If asked what model powers you, politely say you are SES AI Assistant and do not disclose technical model details.'
 
+function buildPromptFromMessages(
+  messages: { role: 'user' | 'assistant'; content: string }[],
+): string {
+  // Keep it predictable for the backend: a compact transcript.
+  return messages.map((m) => `${m.role}: ${m.content}`).join('\n')
+}
+
 export async function streamOllamaChat(
   messages: { role: 'user' | 'assistant'; content: string }[],
   onToken: (accumulated: string) => void,
@@ -45,6 +52,30 @@ export async function streamOllamaChat(
   const base = getChatBackendBaseUrl()
   const path = getChatPath()
   const model = getOllamaModel()
+  // Fast path: support SES FastAPI `/v1/chat/completions` (non-streaming JSON)
+  // without changing the rest of the app. Controlled by VITE_CHAT_PATH.
+  if (path === '/v1/chat/completions') {
+    const prompt = buildPromptFromMessages([
+      { role: 'assistant', content: SES_ASSISTANT_SYSTEM_PROMPT },
+      ...messages,
+    ])
+    const res = await fetch(`${base}${path}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt, temperature: 1 }),
+      signal,
+    })
+    if (!res.ok) {
+      const text = await res.text().catch(() => '')
+      throw new Error(text || `${res.status} ${res.statusText}`)
+    }
+    const data = (await res.json().catch(() => null)) as null | { response?: unknown }
+    const response = typeof data?.response === 'string' ? data.response : ''
+    onToken(response || 'No response.')
+    return
+  }
+
+  // Default: Ollama-style streaming NDJSON (`message.content`, `done`)
   const messagesForApi = [
     { role: 'system' as const, content: SES_ASSISTANT_SYSTEM_PROMPT },
     ...messages,
